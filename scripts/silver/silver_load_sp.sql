@@ -2,38 +2,42 @@
 
 create or alter procedure  silver.load_silver as
 begin
+	declare @start_time datetime, @end_time datetime
+	begin try
+		set @start_time=GETDATE()
+		print '>> truncating [silver].[crm_cust_info]'
+		truncate table [silver].[crm_cust_info]
+		print '>> inserting data into [silver].[crm_cust_info]'
+		insert into [silver].[crm_cust_info](
+		cst_id
+		,cst_key
+		,cst_firstname
+		,cst_lastname
+		,cst_marital_status
+		,cst_gndr
+		,cst_create_date
+		)
+		select 
+		cst_id
+		,cst_key
+		,trim(cst_firstname) as cst_firstname
+		,trim(cst_lastname) as cst_lastname
+		,case when trim(upper(cst_marital_status)) = 'M' then 'Married'
+			  when trim(upper(cst_marital_status)) = 'S' then 'Single'
+			  else 'N/A'
+		end as cst_marital_status --normalize marital_status to readable format
+		,case when trim(upper(cst_gndr)) = 'M' then 'Male'
+			  when trim(upper(cst_gndr)) = 'F' then 'Female'
+			  else 'N/A'
+		end as cst_gndr --normalize gender to readable format
+		,cst_create_date 
+		from (select *,
+		row_number() over(partition by cst_id order by cst_create_date desc) rn 
+		from bronze.crm_cust_info where cst_id is not null )t where rn = 1;
 
+		set @end_time = GETDATE();
 
-	print '>> truncating [silver].[crm_cust_info]'
-	truncate table [silver].[crm_cust_info]
-	print '>> inserting data into [silver].[crm_cust_info]'
-	insert into [silver].[crm_cust_info](
-	cst_id
-	,cst_key
-	,cst_firstname
-	,cst_lastname
-	,cst_marital_status
-	,cst_gndr
-	,cst_create_date
-	)
-	select 
-	cst_id
-	,cst_key
-	,trim(cst_firstname) as cst_firstname
-	,trim(cst_lastname) as cst_lastname
-	,case when trim(upper(cst_marital_status)) = 'M' then 'Married'
-		  when trim(upper(cst_marital_status)) = 'S' then 'Single'
-		  else 'N/A'
-	end as cst_marital_status --normalize marital_status to readable format
-	,case when trim(upper(cst_gndr)) = 'M' then 'Male'
-		  when trim(upper(cst_gndr)) = 'F' then 'Female'
-		  else 'N/A'
-	end as cst_gndr --normalize gender to readable format
-	,cst_create_date 
-	from (select *,
-	row_number() over(partition by cst_id order by cst_create_date desc) rn 
-	from bronze.crm_cust_info where cst_id is not null )t where rn = 1
-
+		print '>>load duration: ' + cast(datediff(second, @start_time, @end_time) as nvarchar) + 'seconds';
 
 
 	print ' >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>'
@@ -166,6 +170,12 @@ begin
 	,subcat
 	,maintenance
 	from [bronze].[erp_px_cat_g1v2]
+	end try	
+
+	begin catch
+		print ' error during loading silver layer' + error_message();
+	end catch
 
 
 end
+
